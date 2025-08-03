@@ -124,9 +124,9 @@ class GoDataTimeSeriesDataset(Dataset):
         """
         df = pd.read_csv(csv_path)
         # Lọc chỉ dữ liệu của cổ phiếu được chỉ định (GOOG)
-        df = df[df['Symbol'] == symbol]
-        df['Date'] = pd.to_datetime(df['Date'], utc=True)
-        df = df.sort_values('Date')
+        # df = df[df['Symbol'] == symbol]
+        df['date'] = pd.to_datetime(df['date'], utc=True)
+        # df = df.sort_values('Date')
         # Lấy cột Close
         prices = df['Close'].values.astype(np.float32)
         self.window_size = window_size
@@ -149,8 +149,10 @@ class GoDataTimeSeriesDataset(Dataset):
 # -------------------------------
 # Tối ưu hóa hyperparameter và lưu kết quả
 # -------------------------------
-def hyperparameter_search(csv_path, symbol="AMZN", window_size=96, device="cuda:0"):
+def hyperparameter_search(csv_path, symbol, window_size, device="cuda:0"):
     # Định nghĩa không gian tham số cần tối ưu
+    import csv
+    import os
     param_grid = {
         'num_channels': [    
             [32, 64],      
@@ -162,17 +164,24 @@ def hyperparameter_search(csv_path, symbol="AMZN", window_size=96, device="cuda:
         'learning_rate': [1e-4, 1e-3]
     }
     
-    # Tạo thư mục để lưu kết quả
     os.makedirs("results", exist_ok=True)
-    
-    # Tạo file CSV để lưu kết quả
-    results_file = "results/tcn_only_results_AMZN_9624.csv"
-    
-    with open(results_file, 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(['num_channels', 'kernel_size', 'dropout', 'emb_dim', 
-                        'batch_size', 'learning_rate', 'epochs', 'train_loss', 'val_loss', 'best_epoch', 'best_val_loss'])
-    
+
+    # File kết quả CSV: theo symbol + window_size
+    results_file = f"results/tcn_results_{symbol}_{window_size}.csv"
+    write_header = not os.path.exists(results_file)
+
+    # Nếu file chưa tồn tại → ghi header
+    if write_header:
+        with open(results_file, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([
+                'num_channels', 'kernel_size', 'dropout', 'emb_dim', 
+                'batch_size', 'learning_rate', 'epochs', 
+                'train_loss', 'val_loss', 'best_epoch', 'best_val_loss'
+            ])
+    best_model_file = f"results/tcn_best_model_{symbol}_{window_size}.pt"
+    best_encoder_file = f"results/tcn_best_encoder_{symbol}_{window_size}.pt"
+    best_param_file = f"results/best_params_{symbol}_{window_size}.txt"
     # Tạo dataset
     dataset = GoDataTimeSeriesDataset(csv_path, symbol=symbol, window_size=window_size, scale=True)
     
@@ -282,11 +291,11 @@ def hyperparameter_search(csv_path, symbol="AMZN", window_size=96, device="cuda:
                                 }
                                 
                                 # Lưu model tốt nhất
-                                torch.save(model.state_dict(), "results/tcn_only_best_AMZN_9624.pt")
-                                torch.save(model.encoder.state_dict(), "results/tcn_only_encode_best_AMZN_9624.pt")
+                                torch.save(model.state_dict(), best_model_file)
+                                torch.save(model.encoder.state_dict(), best_encoder_file)
                                 
                                 # Lưu thông tin tham số tốt nhất
-                                with open("results/best_params_only_AMZN_9624.txt", 'w') as f:
+                                with open(results_file, 'w') as f:
                                     for key, value in best_params.items():
                                         f.write(f"{key}: {value}\n")
     
@@ -302,10 +311,17 @@ def hyperparameter_search(csv_path, symbol="AMZN", window_size=96, device="cuda:
 # -------------------------------
 # Hàm main để chạy tối ưu hóa hyperparameter
 # -------------------------------
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--symbol', type=str, default='AAPL', help='Stock symbol')
+parser.add_argument('--window_size', type=int, default=96, help='Sliding window size')
+args = parser.parse_args()
+
 if __name__ == "__main__":
-    csv_path = "AMZN_industry.csv"  # Thay đổi đường dẫn file CSV nếu cần
-    symbol = "AMZN"
-    window_size = 96
+    csv_path = f"/home/oem/ntthu/RATD_stock/RATD_stock/{args.symbol}.csv"
+    symbol = args.symbol
+    window_size = args.window_size
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     
     print(f"Starting hyperparameter search for {symbol} with window_size={window_size}")

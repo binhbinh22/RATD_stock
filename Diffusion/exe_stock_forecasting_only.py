@@ -22,8 +22,8 @@ parser.add_argument("--unconditional", action="store_true")
 parser.add_argument("--modelfolder", type=str, default="")
 parser.add_argument("--nsample", type=int, default=50)
 parser.add_argument("--target_dim", type=int, default=1, help="Số lượng feature dự báo; mỗi stock chỉ có 1 chiều, còn all_stock hay industry sẽ có nhiều chiều hơn")
-parser.add_argument("--h_size", type=int, default=20, help="Số ngày lịch sử (seq_len)")
-parser.add_argument("--ref_size", type=int, default=20, help="Số ngày dự báo (pred_len)")
+parser.add_argument("--h_size", type=int, default=96, help="Số ngày lịch sử (seq_len)")
+parser.add_argument("--ref_size", type=int, default=24, help="Số ngày dự báo (pred_len)")
 parser.add_argument("--top_k", type= int, default=[1], nargs = '+', help = "top_k retrieval")
 
 
@@ -57,14 +57,14 @@ with open(foldername + "config.json", "w") as f:
 
 top_k_list = args.top_k
 #top_k_list = [1, 2, 5, 10, 20] #, 5, 10, 20
-step_size_list = [1, 2, 5, 10] #, 5, 10
+step_size_list = [1] #, 5, 10
 # method_convert_ts2img_list = ['gasf_gadf', 'gasf_gadf_difference', 'gasf_gadf_linear_trend'] #['gasf_gadf', 'gasf_gadf_difference', 'gasf_gadf_linear_trend']
 # pretrained_model_list = [ 'ViTB32', 'ViTL14', 'ViTH14']
 # for pretrained_model in pretrained_model_list:
 #     for method_convert_ts2img in method_convert_ts2img_list:
 for top_k in top_k_list:
     for step_size in step_size_list:
-        reference =  torch.load(f'{stock}_k_n_only/{stock}_vs_only_{top_k}_{step_size}.pt')
+        reference =  torch.load(f'{stock}_k_n_only/{stock}_vs_only_{args.h_size}_{top_k}_{step_size}.pt')
         
             # reference_file = args.reference_file if args.reference_file != "" else None
             

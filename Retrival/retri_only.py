@@ -66,24 +66,40 @@ def create_sliding_windows(series, window_size, stride=1):
     return np.array([series[i:i+window_size] for i in range(0, len(series)-window_size+1, stride)])
 
 def main():
-    csv_path = "AMZN_industry.csv"
-    seq_len = 96
-    pred_len = 24
-    top_k_list = [1, 3, 5, 10, 20]
-    step_sizes = [1, 2, 5, 10]
+    symbols = 'GOOG'  # Chỉ sử dụng AMZN
+    csv_path = f"/home/oem/ntthu/RATD_stock/RATD_stock/{symbols}.csv"
+    seq_len = 10
+    pred_len = 10
+    top_k_list = [1,3,5,10]
+    step_sizes = [1]
 
-    output_folder = "AMZN_k_n_only"
+    encoder = TCNEncoder(
+        input_size=1,
+        num_channels=[32, 64],
+        kernel_size=5,
+        dropout=0.2,
+        emb_dim=32,
+        # batch_size=16
+    )
+
+    encoder.load_state_dict(torch.load(f"/home/oem/ntthu/RATD_stock/RATD_stock/Train_TCN/results/tcn_best_encoder_{symbols}_{seq_len}.pt", map_location="cpu"))
+    encoder.eval()
+    output_folder = f"{symbols}_k_n_only"
     os.makedirs(output_folder, exist_ok=True)
 
     # Đọc và xử lý dữ liệu
     df = pd.read_csv(csv_path)
-    df = df[df['Symbol'] == 'AMZN']
+    # df = df[df['Symbol'] == 'AMZN']
     df = df[['Date', 'Close']]
     df['Date'] = pd.to_datetime(df['Date'], utc=True)
     
     values = df['Close'].values.astype(np.float32)
     scaler = StandardScaler()
-    scaled = scaler.fit_transform(values.reshape(-1, 1)).flatten()
+    train = values[:int(len(values) * 0.7)]
+    scaler.fit(train.reshape(-1, 1))
+    # test = values[int(len(values) * 0.3):]
+    scaled = scaler.transform(values.reshape(-1, 1)).flatten()
+    # scaled = scaler.fit_transform(values.reshape(-1, 1)).flatten()
 
     total_days = len(scaled)
     valid_samples = total_days - seq_len - pred_len + 1
@@ -107,15 +123,6 @@ def main():
     xH_tensor = torch.tensor(history_windows, dtype=torch.float32).unsqueeze(1)
 
     # Tải mô hình TCNEncoder
-    encoder = TCNEncoder(
-        input_size=1,
-        num_channels=[32, 64],
-        kernel_size=5,
-        dropout=0.2,
-        emb_dim=32
-    )
-    encoder.load_state_dict(torch.load("tcn_only_encode_best_AMZN_9624.pt", map_location="cpu"))
-    encoder.eval()
 
     # Tạo embedding
     with torch.no_grad():
@@ -155,10 +162,14 @@ def main():
             # Chuyển thành tensor với shape (valid_samples * top_k, 20)
             reference_tensor = torch.tensor(all_future_values, dtype=torch.float32)
             
-            filename = f"AMZN_vs_only_{top_k}_{step_size}.pt"
+            filename = f"{symbols}_vs_only_{seq_len}_{top_k}_{step_size}.pt"
             filepath = os.path.join(output_folder, filename)
-            torch.save(reference_tensor, filepath)
-            print(f" Saved to {filepath} with shape: {reference_tensor.shape}")
+            print(f"Saving reference tensor to {filepath} with shape {reference_tensor.shape}")
+
+            flat_tensor = reference_tensor.view(-1)
+            print(f" Flattened shape: {flat_tensor.shape}")
+            torch.save(flat_tensor, filepath)
+
 
 if __name__ == "__main__":
     main()

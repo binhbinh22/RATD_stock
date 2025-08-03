@@ -10,7 +10,7 @@ def train(
     config,
     train_loader,
     valid_loader=None,
-    valid_epoch_interval=20,
+    valid_epoch_interval=3,
     foldername="",
 ):
     optimizer = Adam(model.parameters(), lr=config["lr"], weight_decay=1e-6)
@@ -23,7 +23,11 @@ def train(
         optimizer, milestones=[p1, p2], gamma=0.1
     )
 
+    # Early Stopping variables
     best_valid_loss = 1e10
+    patience = 10
+    patience_counter = 0
+    
     for epoch_no in range(config["epochs"]):
         avg_loss = 0
         model.train()
@@ -45,34 +49,55 @@ def train(
                 if batch_no >= config["itr_per_epoch"]:
                     break
 
-            lr_scheduler.step()
+        lr_scheduler.step()
+        
+        # Validation và Early Stopping
         if valid_loader is not None and (epoch_no + 1) % valid_epoch_interval == 0:
-            #model.eval()
-            #avg_loss_valid = 0
-            #with torch.no_grad():
-                #with tqdm(valid_loader, mininterval=5.0, maxinterval=50.0) as it:
-                    #for batch_no, valid_batch in enumerate(it, start=1):
-                        #loss = model(valid_batch, is_train=0)
-                        #avg_loss_valid += loss.item()
-                        #it.set_postfix(
-                            #ordered_dict={
-                                #"valid_avg_epoch_loss": avg_loss_valid / batch_no,
-                                #"epoch": epoch_no,
-                            #},
-                            #refresh=False,
-                        #)
-            #if best_valid_loss > avg_loss_valid:
-                #if foldername != "":
-            torch.save(model.state_dict(), output_path)
-                #best_valid_loss = avg_loss_valid
-                #print(
-                    #"\n best loss is updated to ",
-                    #avg_loss_valid / batch_no,
-                    #"at",
-                    #epoch_no,
-                #)
+            model.eval()
+            avg_loss_valid = 0
+            with torch.no_grad():
+                with tqdm(valid_loader, mininterval=5.0, maxinterval=50.0) as it:
+                    for batch_no, valid_batch in enumerate(it, start=1):
+                        loss = model(valid_batch, is_train=0)
+                        avg_loss_valid += loss.item()
+                        it.set_postfix(
+                            ordered_dict={
+                                "valid_avg_epoch_loss": avg_loss_valid / batch_no,
+                                "epoch": epoch_no,
+                            },
+                            refresh=False,
+                        )
+            
+            # Tính validation loss trung bình
+            avg_loss_valid = avg_loss_valid / len(valid_loader)
+            
+            # Kiểm tra Early Stopping
+            if avg_loss_valid < best_valid_loss:
+                best_valid_loss = avg_loss_valid
+                patience_counter = 0
+                # Lưu model tốt nhất
+                if foldername != "":
+                    torch.save(model.state_dict(), output_path)
+                print(
+                    f"\nBest loss updated to {avg_loss_valid:.6f} at epoch {epoch_no}"
+                )
+            else:
+                patience_counter += 1
+                print(f"No improvement for {patience_counter} validation checks")
+                
+                # Early stopping
+                if patience_counter >= patience:
+                    print(f"Early stopping triggered at epoch {epoch_no}")
+                    print(f"Best validation loss: {best_valid_loss:.6f}")
+                    break
+        
+        # Nếu không có validation loader, chỉ lưu model cuối cùng
+        elif valid_loader is None:
+            if foldername != "":
+                torch.save(model.state_dict(), output_path)
 
-    if foldername != "":
+    # Lưu model cuối cùng nếu không có early stopping
+    if foldername != "" and valid_loader is None:
         torch.save(model.state_dict(), output_path)
 
 
@@ -139,7 +164,9 @@ def evaluate(model,stock,seq,pred, test_loader, nsample=100, scaler=1, mean_scal
 
                 samples, c_target, eval_points, observed_points, observed_time = output
                 samples = samples.permute(0, 1, 3, 2)  # (B, nsample, L, K)
+                
                 c_target = c_target.permute(0, 2, 1)     # (B, L, K)
+                
                 eval_points = eval_points.permute(0, 2, 1)
                 observed_points = observed_points.permute(0, 2, 1)
 
@@ -170,8 +197,8 @@ def evaluate(model,stock,seq,pred, test_loader, nsample=100, scaler=1, mean_scal
                 )
             fig, ax = plt.subplots()
             ax.plot(x, mse_list, color='#1D2B53')
-            plt.savefig('moti1.pdf')
-            plt.show()
+            #plt.savefig('moti1.pdf')
+            #plt.show()
             with open(foldername + "/generated_outputs_nsample" + str(nsample) + ".pk", "wb") as f:
                 all_target = torch.cat(all_target, dim=0)
                 all_evalpoint = torch.cat(all_evalpoint, dim=0)
@@ -198,7 +225,9 @@ def evaluate(model,stock,seq,pred, test_loader, nsample=100, scaler=1, mean_scal
     MSE = mse_total / evalpoints_total
     MAE = mae_total / evalpoints_total
     variance = var_total / evalpoints_total
-
+    print(f"MSE: {MSE}")
+    print(evalpoints_total)
+    print(mse_total)
     import pandas as pd
     import os
     
