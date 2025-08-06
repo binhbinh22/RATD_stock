@@ -57,7 +57,7 @@ with open(foldername + "config.json", "w") as f:
 
 top_k_list = args.top_k
 #top_k_list = [1, 2, 5, 10, 20] #, 5, 10, 20
-step_size_list = [1, 2, 5, 10] #, 5, 10
+step_size_list = [1] #, 5, 10
 # method_convert_ts2img_list = ['gasf_gadf', 'gasf_gadf_difference', 'gasf_gadf_linear_trend'] #['gasf_gadf', 'gasf_gadf_difference', 'gasf_gadf_linear_trend']
 # pretrained_model_list = [ 'ViTB32', 'ViTL14', 'ViTH14']
 # for pretrained_model in pretrained_model_list:

@@ -44,27 +44,39 @@ class StockDataset(Dataset):
         total_len = len(self.raw_data)
         train = int(total_len * 0.7)
         
-        print(f"Train train {train}")
+        # print(f"Train train {train}")
+        # print(total_len)
+        # print(top_k * self.pred_len * (total_len - 39))
+        # print(len(reference))
 
-        border1s = [0, int(total_len * 0.7) - self.seq_len, int(total_len * 0.8) - self.seq_len]  # 0.8 = 0.7 + 0.1
-        border2s = [int(total_len * 0.7), int(total_len * 0.8), total_len]
+        border1s = [0, int(total_len * 0.7), int(total_len * 0.7)] 
+        border2s = [int(total_len * 0.7), total_len, total_len]
+        border1s_reference = [0, int(total_len * 0.7) * top_k * self.pred_len, int(total_len * 0.7) * top_k]
+        border2s_reference = [(int(total_len * 0.7) - self.seq_len - self.pred_len + 1) * top_k * self.pred_len, len(self.reference), len(self.reference)]
         type_map = {'train': 0, 'val': 1, 'test': 2}
         set_type = type_map[self.flag]
         border1 = border1s[set_type]
         border2 = border2s[set_type]
+        border1_ref = border1s_reference[set_type]
+        border2_ref = border2s_reference[set_type] 
         self.data = self.raw_data[border1:border2]
+        self.reference = self.reference[border1_ref: border2_ref]
 
-        # Scaling: chuẩn hóa theo tập train (sử dụng toàn bộ raw_data cho scaling)
         self.scaler = StandardScaler()
         if self.scale:
             train_data = self.raw_data[0:border2s[0]]
             self.scaler.fit(train_data)
+            self.mean, self.std = self.scaler.mean_, self.scaler.var_
             self.data = self.scaler.transform(self.data)
             self.data_x = data[border1:border2]
+            self.data_y = data[border1:border2]
+            
+
         
-        self.reference = torch.clamp(self.reference, min=0, max=self.data.shape[0] - self.seq_len - self.pred_len)
-    def __getitem__(self, index): 
         
+        #self.reference = torch.clamp(self.reference, min=0, max=self.data.shape[0] - self.seq_len - self.pred_len)
+    def __getitem__(self, index):
+
         s_begin = index 
         s_end = s_begin + self.seq_len + self.pred_len
         # r_begin = s_end - self.label_len  # 20--40   40-->60
@@ -72,41 +84,18 @@ class StockDataset(Dataset):
         # r_end = r_begin + self.label_len + self.pred_len 
         r_end = r_begin + self.label_len + self.pred_len 
         reference = np.zeros((self.top_k * self.pred_len, self.dim))
-        # reference = torch.zeros((self.top_k * self.pred_len, self.dim), dtype=torch.float32)
-
-
-       # load ref 
-        if self.flag == 'train':
-            for i in range(self.top_k): #val :
+    
+        
+        start_idx = (self.top_k * index) * self.pred_len #0 (0, 23)
+        end_idx = (self.top_k * (index + 1)) * self.pred_len #24
+        segment = self.reference[start_idx:end_idx]  # (24,)
+        reference = (segment - self.mean) / (self.std + 1e-8)
+        
+            
                 
-                start_idx = (self.top_k * index + i) * self.pred_len #0 (0, 23)
-                end_idx = (self.top_k * index + i + 1) * self.pred_len #24
-                segment = self.reference[start_idx:end_idx]  # (24,)
-                normalized = (segment - segment.min()) / (segment.max() - segment.min() + 1e-8)
-                reference[i * self.pred_len : (i + 1) * self.pred_len] = normalized.unsqueeze(1)  # (24, 1)
-
-        else:
-            total_len = len(self.raw_data)
-            train = int(total_len * 0.7)
-            sample_train = train - self.seq_len - self.pred_len + 1
-
-            his_index = sample_train + self.pred_len + self.seq_len - 1
-            index = his_index + index  # a vt gọn index = sample_train cx đc
-
-            for i in range(self.top_k): #val :
-                
-                start_idx = (self.top_k * index + i) * self.pred_len #0 (0, 23)
-                end_idx = (self.top_k * index + i + 1) * self.pred_len #24
-                segment = self.reference[start_idx:end_idx]  # (24,)
-                normalized = (segment - segment.min()) / (segment.max() - segment.min() + 1e-8)
-                reference[i * self.pred_len : (i + 1) * self.pred_len] = normalized.unsqueeze(1)  # (24, 1)
-        # print(reference.shape)
-        # start_idx = self.top_k * index  * self.pred_len 
-        # end_idx = self.top_k * (index + 1) * self.pred_len
-        # reference = self.reference[start_idx : end_idx]
         reference = reference.squeeze()
-        seq_x = self.data[s_begin:s_end]
-        seq_y = self.data[r_begin:r_end]
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_y[r_begin:r_end]
         
         # Tạo mốc thời gian (timepoints) dựa trên index (có thể điều chỉnh tùy theo logic)
         timepoints = np.arange(self.seq_len + self.pred_len) * 1.0
@@ -143,9 +132,10 @@ def get_dataloader(csv_path, data_mode='all_stock', symbol='GOOG', size=None, ba
     valid_dataset = StockDataset(csv_path, flag='val', size=size, data_mode=data_mode, symbol=symbol, reference = reference,  top_k = top_k)
     test_dataset = StockDataset(csv_path, flag='test', size=size, data_mode=data_mode, symbol=symbol, reference = reference,  top_k = top_k)
     
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    print("Hello")
     
     return train_loader, valid_loader, test_loader
 
